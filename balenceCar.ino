@@ -6,7 +6,7 @@
 double Setpoint, Input, Output;
 char s[10]={0,0,0,0,0,0,0,0,0,0};
 CRobomodule_due_CAN ocan1;
-double Kp=45, Ki=0.14, Kd=0.01;
+double Kp=1.5, Ki=0, Kd=0.01;
 PID myPID(&Input, &Output, &Setpoint, Kp, Ki, Kd, DIRECT);
 /*
 http://item.taobao.com/item.htm?id=43511899945
