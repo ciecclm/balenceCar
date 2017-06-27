@@ -1,0 +1,395 @@
+//p=45  i=0.14  d=0.01
+#include <PID_Beta6.h>
+#include <Spi.h>
+#define LEFT_CLOCK 2
+#define RIGHT_CLOCK 3
+#define LEFT_DIR 14
+#define RIGHT_DIR 15
+char s[11]="000000000";
+volatile unsigned int LeftCount;
+volatile unsigned int RightCount;
+int rd=0,ld=0;
+int pinI11=4;//定义I1接口
+int pinI12=7;//定义I2接口
+int speedpin1=6;//定义EA(PWM调速)接口
+int pinI21=8;//定义I1接口
+int pinI22=9;//定义I2接口
+int speedpin2=5;//定义EB(PWM调速)接口
+int x_val, y_val, z_val;
+long Channel1Value=16;
+long Channel2Value;
+int torque;
+double Setpoint, Input, Output,FFBias=0;
+double P_Param=0,I_Param=0.3,D_Param=0;
+
+
+/////////////////////////////////
+#define NUMREADINGS 2 //Gyro noise filter
+int readings[NUMREADINGS];                // the readings from the analog input (gyro)
+int index = 0;                            // the index of the current reading
+int total = 0;                            // the running total
+int average = 0;                          // the average
+int gyroPin =5;                          //Gyro Analog input
+
+///////////////////////////////////
+float dt = .05; // .06; //( 1024.0 * 256.0 ) / 16000000.0; (Kalman)  // what does this means ?? hand tuned
+int mydt = 10; //in ms.
+static float PP[2][2] = { //(Kalman)
+  {
+    1, 0   }
+  , //(Kalman)
+  {
+    0, 1   }
+  ,//(Kalman)
+}; //(Kalman)
+
+
+/*
+ * Our two states, the angle and the gyro bias.  As a byproduct of computing
+ * the angle, we also havef an unbiased angular rate available.   These are
+ * read-only to the user of the module.
+ */
+float angle = 0.0; //(Kalman)
+float q_bias = 0.0; //(Kalman)
+float rate = 0.0; //(Kalman)
+float q_m = 0.0; //(Kalman)
+
+int ax_m=0;
+int ay_m=0;
+int cnt = 0;            //Counter
+unsigned long lastread=0;
+unsigned long startmillis=0;
+float calibration =0.23; // read from a pot or something
+
+/*
+ * R represents the measurement covariance noise.  In this case,
+ * it is a 1x1 matrix that says that we expect 0.3 rad jitter
+ * from the accelerometer.
+ */
+float R_angle = .3; //.3 deafault, but is adjusted externally (Kalman)
+
+
+/*
+ * Q is a 2x2 matrix that represents the process covariance noise.
+ * In this case, it indicates how much we trust the acceleromter
+ * relative to the gyros.
+ */
+static const float Q_angle = 0.001; //(Kalman)
+static const float Q_gyro = 0.003; //(Kalman)
+
+float oldAngle=0.0;
+
+int temp=HIGH;
+PID myPID(&Input, &Output, &Setpoint,&FFBias,P_Param,I_Param,D_Param);
+
+
+char read_register(char register_name)
+{
+	   char in_byte;
+	   // need to set bit 7 to indicate a read
+	   register_name |= 128;
+	   // SS is active low
+	   digitalWrite(SS_PIN, LOW);
+	   // send the address of the register we want to read first
+	   Spi.transfer(register_name);
+	   // send nothing, but here's when the device sends back the register's value as an 8 bit byte
+	   in_byte = Spi.transfer(0);
+	   // deselect the device
+	   digitalWrite(SS_PIN, HIGH); 
+	   return in_byte;
+}
+// write to a register
+void write_register(char register_name, byte data)
+{
+	   // char in_byte;
+	   // clear bit 7 to indicate we're doing a write
+	   register_name &= 127;
+	   // SS is active low
+	   digitalWrite(SS_PIN, LOW);
+	   // send the address of the register we want to write
+	   Spi.transfer(register_name);
+	   // send the data we're writing
+	   Spi.transfer(data);
+	   digitalWrite(SS_PIN, HIGH);
+	   //return in_byte;
+}
+void getxyz(int &x_val,int &y_val,int &z_val)
+{
+	  byte x_val_l, x_val_h, y_val_l, y_val_h, z_val_l, z_val_h;
+	  //X
+	  x_val_h = read_register(0x29); //read the outx_h register
+	  x_val_l  = read_register(0x28); // read the outx_l register
+	  x_val = x_val_h;
+	  x_val <<= 8;  //shift high byte to be high 8 bits
+	  x_val += x_val_l;
+	  //Serial.print("x"); Serial.print(x_val, DEC);
+
+	  //Y
+	  y_val_h = read_register(0x2B); //Read outx_h
+	  y_val_l = read_register(0x2A); //Read outx_l
+	  y_val = y_val_h;
+	  y_val <<= 8;  //shift high byte to be high 8 bits
+	  y_val += y_val_l;
+	  //Serial.print("y"); Serial.print(y_val, DEC);
+
+	  //Z
+	  z_val_h = read_register(0x2D); //Read outz_h
+	  z_val_l = read_register(0x2C); //Read outz_l
+	  z_val = z_val_h;
+	  z_val <<= 8;  //shift high byte to be high 8 bits
+	  z_val += z_val_l; 
+	  //Serial.println("z"); Serial.println(z_val, DEC);
+  
+	  // the LIS3LV02DQ according to specs, these values are:
+	  // 2g = 2^12/2 = 2048
+	  // 1g = 1024
+	  // if you use the sign, that gives a range of +/-2g should output +/-2048
+}
+void setup()
+{
+
+	   char in_byte = 0;
+	   pinMode(pinI11,OUTPUT);//定义该接口为输出接口
+	   pinMode(pinI12,OUTPUT);
+	   pinMode(speedpin1,OUTPUT);
+	   pinMode(pinI21,OUTPUT);//定义该接口为输出接口
+	   pinMode(pinI22,OUTPUT);
+	   pinMode(speedpin2,OUTPUT);
+           wheel(0,0);
+	   pinMode (16, INPUT); // connect Rx channel 1 
+	   pinMode (17, INPUT); // connect Rx channel 2 
+	   pinMode (18, OUTPUT); // connect Rx channel 2 
+	   Serial.begin(57600); 
+	   digitalWrite(SS_PIN,HIGH); //disable device
+	   // start up the device
+	   // this essentially activates the device, powers it on, enables all axes, and turn off the self test
+	   // CTRL_REG1 set to 10000111
+	   write_register(0x20, 135);
+  
+	   //query the WHO_AM_I register of the LIS3LV02DQ
+	   // this should return 0x3A, a factory setting
+	   in_byte = read_register(0x0F);
+  
+	   //Serial.print("LIS3LV02DQ: WHO_AM_I [");
+	   // Serial.print(in_byte, HEX);
+	   // Serial.println("]"); 
+	   //Serial.println("----");
+	   pinMode(LEFT_DIR, INPUT);
+	   pinMode(RIGHT_DIR, INPUT);
+            pinMode(17, OUTPUT);
+
+	   myPID.SetMode(AUTO);
+           myPID.SetSampleTime(10);
+	   myPID.SetOutputLimits(-255, 255);
+           myPID.SetInputLimits(-90,90);
+           myPID.SetTunings(-40,0,0.01) ;
+	   Setpoint=0;
+	  /* attachInterrupt(0, LeftEncoderEvent,RISING );
+	   attachInterrupt(1, RightEncoderEvent,RISING );*/
+
+	   for (int i = 0; i < NUMREADINGS; i++)
+                readings[i] = 0;                      // initialize all the readings to 0 (gyro average filter)
+           startmillis = millis();	   
+	   delay(250);
+       
+}
+void wheel(int power1,int power2)
+{
+		if(power1>255)
+					 power1=255;
+			if(power1<-255)
+			power1=-255;
+		if(power2>255)
+					power2=255;
+			if(power2<-255)
+			power2=-255;
+
+	   if(power1<0)
+	   {
+		   power1=-power1;
+		   digitalWrite(pinI11,LOW);//使直流电机顺时针转
+		   digitalWrite(pinI12,HIGH);
+	   }
+	   else
+	   {
+		   digitalWrite(pinI11,HIGH);//使直流电机顺时针转
+		   digitalWrite(pinI12,LOW);
+	   }
+	   if(power2<0)
+	   {
+		   power2=-power2;
+		   digitalWrite(pinI21,LOW);//使直流电机顺时针转
+		   digitalWrite(pinI22,HIGH);
+	   }
+	   else
+	   {
+		   digitalWrite(pinI21,HIGH);//使直流电机顺时针转
+		   digitalWrite(pinI22,LOW);
+	   }
+	   if(power1==0)
+	   {
+		   digitalWrite(pinI11,HIGH);//使直流电机顺时针转
+		   digitalWrite(pinI12,HIGH);
+	   }
+	   if(power2==0)
+	   {
+		   digitalWrite(pinI21,HIGH);//使直流电机顺时针转
+		   digitalWrite(pinI22,HIGH);
+	   }
+	   analogWrite(speedpin1,power1);
+	   analogWrite(speedpin2,power2);
+}
+int test_angle=0,count=0;
+void loop()
+{    
+	   if(Serial.available()==1)
+	   {
+		   wheel(0,0);
+		   s[0]=Serial.read();
+		   while(Serial.available()==0);
+		   s[1]=Serial.read();
+		   while(Serial.available()==0);
+		   s[2]=Serial.read();
+		   while(Serial.available()==0);
+		   s[3]=Serial.read();
+		   while(Serial.available()==0);
+		   s[4]=Serial.read();
+		   while(Serial.available()==0);
+		   s[5]=Serial.read();
+		   while(Serial.available()==0);
+		   s[6]=Serial.read();
+		   while(Serial.available()==0);
+		   s[7]=Serial.read();
+                   while(Serial.available()==0);
+		   s[8]=Serial.read();
+                   while(Serial.available()==0);
+		   s[9]=Serial.read();             
+                  P_Param=(s[0]-48)*10+(s[1]-48)+(s[2]-48)/10.0;
+                  I_Param=((s[3]-48)*10+(s[4]-48)+(s[5]-48)/10.0)/10.0;
+                  D_Param=(s[6]-48)*10+(s[7]-48)+(s[8]-48)/10.0+(s[9]-48)/100.0;
+                  myPID.SetTunings(- P_Param,0,D_Param/100.0) ;
+                 
+	   }/*
+           P_Param=13;//(s[0]-48)*10+(s[1]-48)+(s[2]-48)/10.0;
+           I_Param=0;//(s[3]-48)*10+(s[4]-48)+(s[5]-48)/10.0;
+           D_Param=0;//(s[6]-48)*10+(s[7]-48)+(s[8]-48)/10.0+(s[9]-48)/100.0;*/
+          Serial.print(",  p=" );Serial.print(myPID.GetP_Param());
+          Serial.print(",  i=" );Serial.print(myPID.GetI_Param());
+          Serial.print(",  d=" );Serial.print(myPID.GetD_Param());
+     
+        int delta = millis()-lastread;
+        if( delta >= mydt) 
+	{     
+		  // sample every dt ms -> 1000/dt hz.
+          lastread = millis();  
+         
+          /*total -= readings[index];               // subtract the last gyro reading
+          readings[index] = analogRead(gyroPin); // read from the gyro sensor
+          total += readings[index];               // add the reading to the total
+          index = (index + 1);                    // advance to the next index
+          if (index >= NUMREADINGS)               // if we're at the end of the array...
+                index = 0;                            // ...wrap around to the beginning
+          average = (total / NUMREADINGS);    // calculate the average of gyro input*/
+          
+          average=analogRead(gyroPin);
+          dt = ((float)delta) / 1000.0;
+          q_m= ((float)average)*0.6*PI/180;  // HAC remove 1.5 mult
+          /* Unbias our gyro */
+          const float q = q_m - q_bias; //(Kalman)
+          const float Pdot[2 * 2] =
+         {
+	         Q_angle - PP[0][1] - PP[1][0], /* 0,0 */ //(Kalman)   
+                 - PP[1][1], /* 0,1 */
+                 - PP[1][1], /* 1,0 */
+                 Q_gyro /* 1,1 */
+          };
+          /* Store our unbias gyro estimate */
+          rate = q; //(Kalman)
+          /*
+          * Update our angle estimate
+          * angle += angle_dot * dt
+          *       += (gyro - gyro_bias) * dt
+          *       += q * dt
+          */
+          angle += q * dt; //(Kalman)
+          /* Update the covariance matrix */
+          PP[0][0] += Pdot[0] * dt; //(Kalman)
+          PP[0][1] += Pdot[1] * dt; //(Kalman)
+          PP[1][0] += Pdot[2] * dt; //(Kalman)
+          PP[1][1] += Pdot[3] * dt; //(Kalman)
+          // read here!
+         // getxyz(x_val,y_val,z_val);
+          /*  ax_m = z_val;
+          ay_m = y_val;*/
+          // non aggiusto R
+          // R_angle= (joy_y_axis+1)*0.0098039; //external adjust jitter of accelerometer with nunchuck joystick
+          getxyz(x_val, y_val, z_val);	
+          const float angle_m = atan2(y_val,sqrt(sq((float)x_val)+sq((float)z_val))); //(Kalman)
+          const float angle_err = angle_m - angle; //(Kalman)
+          const float C_0 = 1; //(Kalman)
+          const float PCt_0 = C_0 * PP[0][0];  //(Kalman)
+          const float PCt_1 = C_0 * PP[1][0]; //(Kalman)
+          const float E =R_angle+ C_0 * PCt_0; //(Kalman)
+          const float K_0 = PCt_0 / E; //(Kalman)
+          const float K_1 = PCt_1 / E; //(Kalman)
+          const float t_0 = PCt_0; /* C_0 * P[0][0] + C_1 * P[1][0] (Kalman) */
+          const float t_1 = C_0 * PP[0][1]; /* + C_1 * P[1][1]  = 0 (Kalman) */
+          PP[0][0] -= K_0 * t_0; //(Kalman)
+          PP[0][1] -= K_0 * t_1; //(Kalman)
+          PP[1][0] -= K_1 * t_0; //(Kalman)
+          PP[1][1] -= K_1 * t_1; //(Kalman)
+          angle += K_0 * angle_err; //(Kalman)
+          q_bias += K_1 * angle_err; //(Kalman)
+          
+          float myangle=(angle*57.2957795130823)+ calibration;
+          float rate_deg = rate * 57.2957795130823;
+          count++;
+          
+          Input= myangle;
+          myPID.Compute();
+        /*  Channel1Value= pulseIn(16,HIGH,20000);
+              Channel1Value-=1500;
+         if(Channel1Value>-50&&Channel1Value<50)
+              Channel1Value=0;
+          Channel1Value=Channel1Value*0.5;*/
+          Channel1Value=0;
+          if(myangle<20 && myangle>-20)
+               wheel(Output+ Channel1Value,Output*1.1+ Channel1Value);  
+          else
+               wheel(0,0);   
+          if(myangle<3 && myangle>-3 && count>500)
+               myPID.SetTunings(- P_Param,I_Param,D_Param/100.0);
+          else
+               myPID.SetTunings(- P_Param,0,D_Param/100.0) ;     
+          Serial.print(" ,myangle=" );Serial.print(myangle);
+          Serial.print(" ,Output=" );Serial.println(Output);
+          oldAngle = myangle;        		
+          }
+          digitalWrite(17,temp);
+          temp=!temp;        
+       
+}
+void LeftEncoderEvent()
+{
+  ld=digitalRead(LEFT_DIR);
+  if (ld == 1)
+  {
+    LeftCount++;
+  }
+  else
+  {
+    LeftCount--;
+  }
+} 
+void RightEncoderEvent()
+{
+  rd=digitalRead(RIGHT_DIR);
+  if ( rd== 1)
+  {
+    RightCount++;
+  }
+  else
+  {
+    RightCount--;
+  }
+}
