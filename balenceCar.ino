@@ -4,10 +4,12 @@
 #include <Wire.h>
 //#include "robomodule_due_CAN.h"
 double Setpoint, Input, Output;
-char s[15]={0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
+char s[25]={0,0,0,0,0,0,0,0,0,0,0,0,0,0,00,0,0,0,0,0,0,0,0,0};
 CRobomodule_due_CAN ocan1;
-double Kp=1.5, Ki=0, Kd=0.00001;
+double Kp=14, Ki=0, Kd=0.1;
 PID myPID(&Input, &Output, &Setpoint, Kp, Ki, Kd, DIRECT);
+int i;
+int multp,multi,multd;
 /*
 http://item.taobao.com/item.htm?id=43511899945
 Test on mega2560.
@@ -53,9 +55,14 @@ void loop()
  // Serial.print("SN:");Serial.print(JY901.stcSN.sSVNum);Serial.print(" PDOP:");Serial.print((float)JY901.stcSN.sPDOP/100);Serial.print(" HDOP:");Serial.print((float)JY901.stcSN.sHDOP/100);Serial.print(" VDOP:");Serial.println((float)JY901.stcSN.sVDOP/100);
   
   //Serial2.println("");
-  delay(100);
+  delay(10);
  if(Serial2.available()){
-    s[0]=Serial2.read();
+    for(i=0;i<24;i++)
+    {
+      while(Serial2.available()==0);
+      s[i]=Serial2.read();
+    }
+    /*s[0]=Serial2.read();
     while(Serial2.available()==0);
     s[1]=Serial2.read();
     while(Serial2.available()==0);
@@ -76,6 +83,26 @@ void loop()
     s[9]=Serial2.read();
     while(Serial2.available()==0);
     s[10]=Serial2.read();
+    while(Serial2.available()==0);
+    s[11]=Serial2.read();
+    while(Serial2.available()==0);
+    s[12]=Serial2.read();
+    while(Serial2.available()==0);
+    s[10]=Serial2.read();
+    while(Serial2.available()==0);
+    s[10]=Serial2.read();
+    while(Serial2.available()==0);
+    s[10]=Serial2.read();
+    while(Serial2.available()==0);
+    s[10]=Serial2.read();
+    while(Serial2.available()==0);
+    s[10]=Serial2.read();
+    while(Serial2.available()==0);
+    s[10]=Serial2.read();
+    while(Serial2.available()==0);
+    s[10]=Serial2.read();
+    while(Serial2.available()==0);
+    s[10]=Serial2.read();*/
   //  while(Serial2.available()==0);
   //  s[11]=Serial2.read();
   //  while(Serial2.available()==0);
@@ -84,12 +111,14 @@ void loop()
    // s[13]=Serial2.read();
    // while(Serial2.available()==0);
   //  s[14]=Serial2.read();
-    Kp=(s[0]-48)*10+(s[1]-48)+(s[2]-48)/10.0;
-    Ki=(s[4]-48)*10+(s[5]-48)+(s[6]-48)/10.0;
-    Kd=(s[8]-48)/10+(s[9]-48)/100+(s[10]-48)/1000.0;
-    
+    multp=(s[12]-48)*1000+(s[13]-48)*100+(s[14]-48)*10+s[15];
+    multi=(s[16]-48)*1000+(s[17]-48)*100+(s[18]-48)*10+s[19];
+    multd=(s[20]-48)*1000+(s[21]-48)*100+(s[22]-48)*10+s[23];
+    Kp=((s[0]-48)+(s[1]-48)/10+(s[2]-48)/100.0+(s[3]-48)/1000.0)*multp;
+    Ki=((s[4]-48)+(s[5]-48)/10+(s[6]-48)/100.0+(s[7]-48)/1000.0)*multi;
+    Kd=((s[8]-48)+(s[9]-48)/10+(s[10]-48)/100.0+(s[11]-48)/1000.0)*multd;
     myPID.SetTunings(Kp,Ki,Kd);
-    }
+  }
   while (Serial1.available()) 
   {
     JY901.CopeSerialData(Serial1.read()); //Call JY901 data cope function
@@ -98,14 +127,12 @@ void loop()
   myPID.Compute();
   ocan1.speedwheel(Output,0,0);
   Serial2.print(Kp);
-    Serial2.print(',');
-    Serial2.print(Ki);
-    Serial2.print(',');
-    s[11]=0;
-    Serial2.print(s[8]);
-    Serial2.print(s[9]);
-    Serial2.println(s[10]);
-    Serial2.print("Output:");Serial2.print(Output);
-   Serial2.print("INput:");Serial2.println(Input);
+  Serial2.print(',');
+  Serial2.print(Ki);
+  Serial2.print(',');
+  Serial2.print(Kd);
+
+  Serial2.print("Output:");Serial2.print(Output);
+  Serial2.print("INput:");Serial2.println(Input);
 }
 
