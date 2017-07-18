@@ -84,10 +84,9 @@ void loop()
    // s[13]=Serial2.read();
    // while(Serial2.available()==0);
   //  s[14]=Serial2.read();
-    Kp=(s[0]-48)*10+(s[1]-48)+(s[2]-48)/10.0;
+    Kp=(s[0]-48)*10+(s[1]-48)/1+(s[2]-48)/10.0;
     Ki=(s[4]-48)*10+(s[5]-48)+(s[6]-48)/10.0;
     Kd=(s[8]-48)/10+(s[9]-48)/100+(s[10]-48)/1000.0;
-    
     myPID.SetTunings(Kp,Ki,Kd);
     }
   while (Serial1.available()) 
