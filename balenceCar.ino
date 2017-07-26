@@ -2,14 +2,34 @@
 #include <PID_v1.h>
 #include <JY901.h>
 #include <Wire.h>
+//#include <eeprom.h>
 //#include "robomodule_due_CAN.h"
 double Setpoint, Input, Output;
 char s[25]={0,0,0,0,0,0,0,0,0,0,0,0,0,0,00,0,0,0,0,0,0,0,0,0};
+char tempsp[7]="";
+char tempsi[7]="";
+char tempsd[7]="";
+char tempsangle[7]="";
 CRobomodule_due_CAN ocan1;
-double Kp=14, Ki=0, Kd=0.1;
+double Kp=320, Ki=0, Kd=1.6;
 PID myPID(&Input, &Output, &Setpoint, Kp, Ki, Kd, DIRECT);
 int i;
 int multp,multi,multd;
+
+int WindowSize = 5;
+unsigned long windowStartTime;
+struct Kpid
+{
+  double Kp;
+  double Ki;
+  double Kd;
+};
+union kpid_data
+{
+  struct Kpid m_Kpid;
+  byte k[sizeof(double)*3];
+}m_pid;
+
 /*
 http://item.taobao.com/item.htm?id=43511899945
 Test on mega2560.
@@ -24,9 +44,19 @@ void setup()
   ocan1.initdriver(CAN_BPS_1000K,0,0,1);
   Input = 0;
   Setpoint = 0;
-   myPID.SetOutputLimits(-5000,5000);
-   myPID.SetSampleTime(10);
-   myPID.SetMode(AUTOMATIC);
+  for( i=0;i<sizeof(double)*3;i++)
+  {
+    // m_pid.k[i]=EEPROM.write(i);
+  }
+  /*
+  Kp=m_pid.m_Kpid.Kp;
+  Ki=m_pid.m_Kpid.Ki;
+  Kd=m_pid.m_Kpid.Kd;*/
+  myPID.SetOutputLimits(-5000,5000);
+  myPID.SetSampleTime(5);
+  myPID.SetMode(AUTOMATIC);
+  windowStartTime = millis();
+   
 }
 
 void loop() 
@@ -55,83 +85,63 @@ void loop()
  // Serial.print("SN:");Serial.print(JY901.stcSN.sSVNum);Serial.print(" PDOP:");Serial.print((float)JY901.stcSN.sPDOP/100);Serial.print(" HDOP:");Serial.print((float)JY901.stcSN.sHDOP/100);Serial.print(" VDOP:");Serial.println((float)JY901.stcSN.sVDOP/100);
   
   //Serial2.println("");
-  delay(10);
+  //delay(10);
  if(Serial2.available()){
     for(i=0;i<24;i++)
     {
       while(Serial2.available()==0);
       s[i]=Serial2.read();
+      if(i<6)
+      {
+        tempsp[i]=s[i];
+      }
+      if((i>=6)&&(i<12))
+      {
+        tempsi[i-6]=s[i];
+      }
+      if((i>=12)&&(i<18))
+      {
+        tempsd[i-12]=s[i];
+      }
+      if((i>=18)&&(i<24))
+      {
+        tempsangle[i-18]=s[i];
+      }
     }
-    /*s[0]=Serial2.read();
-    while(Serial2.available()==0);
-    s[1]=Serial2.read();
-    while(Serial2.available()==0);
-    s[2]=Serial2.read();
-    while(Serial2.available()==0);
-    s[3]=Serial2.read();
-    while(Serial2.available()==0);
-    s[4]=Serial2.read();
-    while(Serial2.available()==0);
-    s[5]=Serial2.read();
-    while(Serial2.available()==0);
-    s[6]=Serial2.read();
-    while(Serial2.available()==0);
-    s[7]=Serial2.read();
-    while(Serial2.available()==0);
-    s[8]=Serial2.read();
-    while(Serial2.available()==0);
-    s[9]=Serial2.read();
-    while(Serial2.available()==0);
-    s[10]=Serial2.read();
-    while(Serial2.available()==0);
-    s[11]=Serial2.read();
-    while(Serial2.available()==0);
-    s[12]=Serial2.read();
-    while(Serial2.available()==0);
-    s[10]=Serial2.read();
-    while(Serial2.available()==0);
-    s[10]=Serial2.read();
-    while(Serial2.available()==0);
-    s[10]=Serial2.read();
-    while(Serial2.available()==0);
-    s[10]=Serial2.read();
-    while(Serial2.available()==0);
-    s[10]=Serial2.read();
-    while(Serial2.available()==0);
-    s[10]=Serial2.read();
-    while(Serial2.available()==0);
-    s[10]=Serial2.read();
-    while(Serial2.available()==0);
-    s[10]=Serial2.read();*/
-  //  while(Serial2.available()==0);
-  //  s[11]=Serial2.read();
-  //  while(Serial2.available()==0);
-  //  s[12]=Serial2.read();
-   // while(Serial2.available()==0);
-   // s[13]=Serial2.read();
-   // while(Serial2.available()==0);
-  //  s[14]=Serial2.read();
-<<<<<<< HEAD
-    Kp=(s[0]-48)*10+(s[1]-48)/1+(s[2]-48)/10.0;
-    Ki=(s[4]-48)*10+(s[5]-48)+(s[6]-48)/10.0;
-    Kd=(s[8]-48)/10+(s[9]-48)/100+(s[10]-48)/1000.0;
-=======
-    multp=(s[12]-48)*1000+(s[13]-48)*100+(s[14]-48)*10+s[15];
-    multi=(s[16]-48)*1000+(s[17]-48)*100+(s[18]-48)*10+s[19];
-    multd=(s[20]-48)*1000+(s[21]-48)*100+(s[22]-48)*10+s[23];
-    Kp=((s[0]-48)+(s[1]-48)/10+(s[2]-48)/100.0+(s[3]-48)/1000.0)*multp;
-    Ki=((s[4]-48)+(s[5]-48)/10+(s[6]-48)/100.0+(s[7]-48)/1000.0)*multi;
-    Kd=((s[8]-48)+(s[9]-48)/10+(s[10]-48)/100.0+(s[11]-48)/1000.0)*multd;
->>>>>>> b976cc68f710412d68f68b6f20ddcc737750d60d
+    
+    Kp=atof(tempsp)*10;
+    Ki=atof(tempsi);
+    Kd=atof(tempsd);
+    
+    Setpoint=atof(tempsangle);
     myPID.SetTunings(Kp,Ki,Kd);
+    m_pid.m_Kpid.Kp=Kp;
+    m_pid.m_Kpid.Ki=Ki;
+    m_pid.m_Kpid.Kd=Kd;
+    for( i=0;i<sizeof(double)*3;i++)
+    {
+      //EEPROM.write(i,m_pid.k[i]);
+    }
+    
   }
   while (Serial1.available()) 
   {
     JY901.CopeSerialData(Serial1.read()); //Call JY901 data cope function
   }
-  Input = JY901.stcAngle.Angle[1];
+  Input = JY901.stcAngle.Angle[1]/32768.0*180+2.8;
   myPID.Compute();
-  ocan1.speedwheel(Output,0,0);
+  if (millis() - windowStartTime > WindowSize)
+  { //time to shift the Relay Window
+    windowStartTime=millis();
+    myPID.Compute();
+    ocan1.speedwheel(Output+2000,0,0);
+    
+    if(Input<3 && Input>-3)
+               myPID.SetTunings(160,10,0.8);
+          else
+               myPID.SetTunings(240,0,1.2);    
+  }
+  
   Serial2.print(Kp);
   Serial2.print(',');
   Serial2.print(Ki);
