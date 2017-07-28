@@ -2,8 +2,7 @@
 #include <PID_v1.h>
 #include <JY901.h>
 #include <Wire.h>
-//#include <eeprom.h>
-//#include "robomodule_due_CAN.h"
+#define DT 10
 double Setpoint, Input, Output;
 char s[25]={0,0,0,0,0,0,0,0,0,0,0,0,0,0,00,0,0,0,0,0,0,0,0,0};
 char tempsp[7]="";
@@ -15,21 +14,8 @@ double Kp=140, Ki=0, Kd=0.07;
 PID myPID(&Input, &Output, &Setpoint, Kp, Ki, Kd, DIRECT);
 int i;
 int multp,multi,multd;
-
-int WindowSize = 5;
 int x_val, y_val, z_val;
 //unsigned long windowStartTime;
-struct Kpid
-{
-  double Kp;
-  double Ki;
-  double Kd;
-};
-union kpid_data
-{
-  struct Kpid m_Kpid;
-  byte k[sizeof(double)*3];
-}m_pid;
 
 /*
 http://item.taobao.com/item.htm?id=43511899945
@@ -46,7 +32,7 @@ int gyroPin =A0;                          //Gyro Analog input
 
 ///////////////////////////////////
 float dt = .05; // .06; //( 1024.0 * 256.0 ) / 16000000.0; (Kalman)  // what does this means ?? hand tuned
-int mydt = 5; //in ms.
+int mydt = DT; //in ms.
 static float PP[2][2] = { //(Kalman)
   {
     1, 0   }
@@ -97,31 +83,18 @@ int temp=HIGH;
 void setup() 
 {
   Serial2.begin(115200); 
-  Serial.begin(9600); 
+  Serial.begin(115200); 
   Serial1.begin(115200);
   ocan1.initdriver(CAN_BPS_1000K,0,0,1);
   Input = 0;
   Setpoint = 0;
-  for( i=0;i<sizeof(double)*3;i++)
-  {
-    // m_pid.k[i]=EEPROM.write(i);
-  }
-  /*
-  Kp=m_pid.m_Kpid.Kp;
-  Ki=m_pid.m_Kpid.Ki;
-  Kd=m_pid.m_Kpid.Kd;*/
   for (int i = 0; i < NUMREADINGS; i++)
-      readings[i] = 0;                      // initialize all the readings to 0 (gyro average filter)
-   startmillis = millis();     
-     delay(250);
-       
+      readings[i] = 0;                      // initialize all the readings to 0 (gyro average filter)   
   myPID.SetOutputLimits(-5000,5000);
-  myPID.SetSampleTime(5);
+  myPID.SetSampleTime(DT);
   myPID.SetMode(AUTOMATIC);
-  //windowStartTime = millis();
-  startmillis = millis();     
   delay(250);
-   
+  startmillis = millis();  
 }
 int test_angle=0,count=0;
 void loop() 
@@ -184,11 +157,6 @@ void loop()
     m_pid.m_Kpid.Kp=Kp;
     m_pid.m_Kpid.Ki=Ki;
     m_pid.m_Kpid.Kd=Kd;
-    for( i=0;i<sizeof(double)*3;i++)
-    {
-      //EEPROM.write(i,m_pid.k[i]);
-    }
-    
   }
   while (Serial1.available()) 
   {
@@ -210,6 +178,8 @@ void loop()
   }*/
   
     int delta = millis()-lastread;
+    print("delta=");
+    println(delta);
     if( delta >= mydt) 
     {     
       // sample every dt ms -> 1000/dt hz.
